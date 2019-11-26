@@ -67,17 +67,17 @@
   :group 'dap-ui)
 
 (defface dap-ui-sessions-active-session-face
-  '((t :inherit font-lock-function-name-face  :underline t))
+  '((t :inherit font-lock-constant-face :underline t))
   "Face used for marking current session in sessions list."
   :group 'dap-ui)
 
 (defface dap-ui-sessions-terminated-face
-  '((t :inherit italic :underline t :weight bold))
+  '((t :inherit shadow))
   "Face used for marking terminated session."
   :group 'dap-ui)
 
 (defface dap-ui-sessions-running-face
-  '((t :inherit font-lock-function-name-face :underline t :weight bold))
+  '((t :inherit font-lock-constant-face))
   "Face used for marking terminated session."
   :group 'dap-ui)
 
@@ -97,7 +97,7 @@
   :group 'dap-ui)
 
 (defface dap-ui-locals-variable-face
-  '((t :inherit  font-lock-builtin-face :weight bold))
+  '((t :inherit font-lock-builtin-face :weight bold))
   "Face used for marking terminated session."
   :group 'dap-ui)
 
@@ -1044,3 +1044,79 @@ REQUEST-ID is the active request id. If it doesn't maches the
 
 (provide 'dap-ui)
 ;;; dap-ui.el ends here
+
+(defun dash-expand:&dap-session (key source)
+  `(,(intern-soft (format "dap--debug-session-%s" (eval key) )) ,source))
+
+(defun dap--send-message-sync (message session)
+  (let* (;; max time by which we must get a response
+         (send-time (time-to-seconds (current-time)) )
+         (expected-time (+ send-time lsp-response-timeout))
+         resp-result)
+
+    (dap--send-message message
+                       (dap--resp-handler
+                        (lambda (res)
+                          (setf resp-result (or res :finished))))
+                       session)
+
+    (while (not resp-result)
+      (accept-process-output nil 0.001)
+      (when (< expected-time (time-to-seconds (current-time)))
+        (error "Timeout while waiting for response. Method: %s." method)))
+    resp-result))
+
+(->> (lsp-workspace-get-metadata "debug-sessions")
+     reverse
+     (-map
+      (-lambda ((session &as &dap-session 'name 'thread-states))
+        (list
+         :label (propertize name 'face (dap-ui-session--calculate-face session))
+         :key name
+         :icon (if (dap--session-running session)
+                   'session-started
+                 'session-terminated)
+         :children
+         (when (dap--session-running session)
+           (->>
+            (dap--send-message-sync (dap--make-request "threads")
+                                    session)
+            (gethash "body")
+            (gethash "threads")
+            (-map
+             (-lambda ((thread &as &hash "name" "id"))
+               (let* ((status (s-capitalize (or (gethash id thread-states) "running")))
+                      (stopped? (string= status "Stopped")))
+                 (list
+                  :label (concat name (when status (propertize (concat "  " status) 'face 'lsp-lens-face)))
+                  :key id
+                  :icon (if stopped? 'thread-stopped 'thread-running)
+                  :children
+                  (when stopped?
+                    (->> (dap--send-message-sync (dap--make-request "stackTrace"
+                                                                    (list :threadId id))
+                                                 session)
+                         (gethash "body")
+                         (gethash "stackFrames")
+                         (-map (-lambda ((stack-frame &as &hash "name" "line" "source"))
+                                 (let* ((current-session (dap--cur-session))
+                                        (icons (if (and
+                                                    (equal session current-session)
+                                                    (= id (dap--debug-session-thread-id current-session))
+                                                    (equal stack-frame (dap--debug-session-active-frame current-session)))
+                                                   'stack-stopped
+                                                 'stack)))
+                                   (list
+                                    :label (if source
+                                               (concat (propertize name
+                                                                   'face
+                                                                   'dap-ui-sessions-stack-frame-face)
+                                                       (propertize (format " (%s:%s)" (or (gethash "name" source)
+                                                                                          (gethash "path" source))
+                                                                           line)
+                                                                   'face 'lsp-lens-face))
+                                             (concat name (propertize "(Unknown source)"
+                                                                      'lsp-lens-face) ))
+                                    :key name
+                                    :icon icons)))))))))))))))
+     lsp-treemacs--show-references)

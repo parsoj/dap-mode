@@ -5,6 +5,7 @@ import org.junit.Test;
 public class AppTest {
   @Test
   public void testA() {
+      new App();
     System.out.println("Entering testA...");
     foo();
   }

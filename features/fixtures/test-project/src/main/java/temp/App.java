@@ -1,19 +1,27 @@
 package temp;
 
 class App {
-  public static void main(String[] args) {
+
+
+
+
+
+public static void main(String[] args) {
     System.out.print(123);
-    foo();
+    fo();
     bar();
   }
 
-  static int foo() {
+
+
+
+  static int fo() {
     new App();
     return 10;
   }
 
   static int bar() {
-    new App();
+      new App();
     return 10;
   }
 }
