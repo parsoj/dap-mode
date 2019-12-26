@@ -78,7 +78,7 @@ as the pyenv version then also return nil. This works around https://github.com/
          (python-args (or (plist-get conf :args) ""))
          (program (or (plist-get conf :target-module)
                       (plist-get conf :program)
-                      (buffer-file-name)))
+		      ))
          (module (plist-get conf :module)))
 
     (dap--put-if-absent conf :program-to-start
@@ -88,7 +88,9 @@ as the pyenv version then also return nil. This works around https://github.com/
                                 host
                                 debug-port
                                 (if module (concat "-m " (shell-quote-argument module)) "")
-                                (shell-quote-argument program)
+                                (if program (shell-quote-argument program)
+				  ""
+				  )
                                 python-args))
     (plist-put conf :program program)
     (plist-put conf :debugServer debug-port)
